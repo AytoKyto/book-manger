@@ -43,6 +43,26 @@ async function api(method, path, body) {
 
 // -------------------------------------------------------------- Router ----
 
+function backTarget() {
+  const hash = location.hash.replace(/^#/, '') || '/';
+  const chapterMatch = hash.match(/^\/books\/(\d+)\/chapters\/\d+$/);
+  const bookMatch = hash.match(/^\/books\/\d+$/);
+  const runMatch = hash.match(/^\/runs\/\d+$/);
+  if (chapterMatch) return `/books/${chapterMatch[1]}`;
+  if (bookMatch) return '/';
+  if (runMatch) return state.currentBook ? `/books/${state.currentBook.id}` : '/';
+  return null;
+}
+
+function renderTopbar(titleHtml, actionsHtml = '') {
+  const back = backTarget();
+  const backBtn = back !== null ? `<button class="back-btn" id="back-btn" aria-label="Retour">‹</button>` : '';
+  document.getElementById('topbar').innerHTML = `${backBtn}${titleHtml}<div class="spacer"></div>${actionsHtml}`;
+  if (back !== null) {
+    document.getElementById('back-btn').addEventListener('click', () => { closeMobilePanels(); location.hash = back; });
+  }
+}
+
 function route() {
   if (!state.authenticated) {
     renderLogin();
@@ -110,7 +130,6 @@ function closeMobilePanels() {
 
 function renderShell() {
   app.innerHTML = `
-    <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Ouvrir le menu">☰</button>
     <div class="mobile-backdrop" id="mobile-backdrop"></div>
     <div class="app-shell">
       <nav class="sidebar" id="sidebar">
@@ -126,7 +145,13 @@ function renderShell() {
         <div class="topbar" id="topbar"></div>
         <div class="view" id="view"></div>
       </div>
-    </div>`;
+    </div>
+    <nav class="bottom-bar" id="bottom-bar">
+      <button class="bottom-bar-item" data-tab="library"><span class="icon">📚</span>Bibliothèque</button>
+      <button class="bottom-bar-item" data-tab="chapters"><span class="icon">📑</span>Chapitres</button>
+      <button class="bottom-bar-item" data-tab="agents"><span class="icon">🤖</span>Agents</button>
+      <button class="bottom-bar-item" data-tab="history"><span class="icon">🕓</span>Historique</button>
+    </nav>`;
 
   document.getElementById('go-home').addEventListener('click', () => { closeMobilePanels(); location.hash = '/'; });
   document.getElementById('logout-btn').addEventListener('click', async () => {
@@ -134,13 +159,40 @@ function renderShell() {
     state.authenticated = false;
     route();
   });
-  document.getElementById('mobile-menu-btn').addEventListener('click', () => {
+  document.getElementById('mobile-backdrop').addEventListener('click', closeMobilePanels);
+
+  document.querySelector('#bottom-bar [data-tab="library"]').addEventListener('click', () => {
+    closeMobilePanels();
+    location.hash = '/';
+  });
+  document.querySelector('#bottom-bar [data-tab="chapters"]').addEventListener('click', () => {
     document.getElementById('sidebar').classList.toggle('open');
     document.getElementById('mobile-backdrop').classList.toggle('show');
   });
-  document.getElementById('mobile-backdrop').addEventListener('click', closeMobilePanels);
+  document.querySelector('#bottom-bar [data-tab="agents"]').addEventListener('click', (e) => {
+    if (e.currentTarget.disabled) return;
+    document.querySelector('.side-panel')?.classList.toggle('open');
+    document.getElementById('mobile-backdrop').classList.toggle('show');
+  });
+  document.querySelector('#bottom-bar [data-tab="history"]').addEventListener('click', (e) => {
+    if (e.currentTarget.disabled) return;
+    const m = location.hash.match(/^#\/books\/(\d+)\/chapters\/(\d+)$/);
+    if (!m || !state.currentBook) return;
+    const chapter = state.currentBook.chapters.find((c) => c.id === Number(m[2]));
+    if (chapter) showHistory(state.currentBook, chapter);
+  });
 
   renderSidebar();
+}
+
+function setBottomBar(activeTab, editorContextEnabled = false) {
+  const bar = document.getElementById('bottom-bar');
+  if (!bar) return;
+  bar.querySelectorAll('.bottom-bar-item').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.tab === activeTab);
+  });
+  bar.querySelector('[data-tab="agents"]').disabled = !editorContextEnabled;
+  bar.querySelector('[data-tab="history"]').disabled = !editorContextEnabled;
 }
 
 async function renderSidebar() {
@@ -205,8 +257,8 @@ async function openBook(bookId, force = false) {
 // ------------------------------------------------------------- Library ----
 
 async function renderLibrary() {
-  document.getElementById('topbar').innerHTML = `<div class="title">Bibliothèque</div>
-    <div class="spacer"></div><button class="btn primary small" id="new-book">＋ Nouveau livre</button>`;
+  renderTopbar(`<div class="title">Bibliothèque</div>`, `<button class="btn primary small" id="new-book">＋ Nouveau livre</button>`);
+  setBottomBar('library');
 
   const data = await api('GET', '/api/books');
   state.books = data.books;
@@ -244,10 +296,11 @@ function bookCardHtml(b) {
 
 function renderBookOverview() {
   const book = state.currentBook;
-  document.getElementById('topbar').innerHTML = `<div class="title">${escapeHtml(book.title)}</div>
-    <div class="sub">${book.chapters.length} chapitre(s)</div>
-    <div class="spacer"></div>
-    <button class="btn danger small" id="delete-book">Supprimer</button>`;
+  renderTopbar(
+    `<div class="title">${escapeHtml(book.title)}</div><div class="sub">${book.chapters.length} chapitre(s)</div>`,
+    `<button class="btn danger small" id="delete-book">Supprimer</button>`
+  );
+  setBottomBar('chapters');
 
   const view = document.getElementById('view');
   if (book.chapters.length === 0) {
@@ -284,11 +337,11 @@ async function renderEditor(chapterId) {
     state.agents = a.agents;
   }
 
-  document.getElementById('topbar').innerHTML = `<div class="title">${escapeHtml(chapter.title)}</div>
-    <div class="sub" id="save-indicator">Enregistré</div>
-    <div class="spacer"></div>
-    <button class="btn small mobile-only" id="agents-toggle-btn">Agents</button>
-    <button class="btn small" id="history-btn">Historique</button>`;
+  renderTopbar(
+    `<div class="title">${escapeHtml(chapter.title)}</div><div class="sub" id="save-indicator">Enregistré</div>`,
+    `<button class="btn small desktop-only" id="history-btn">Historique</button>`
+  );
+  setBottomBar('chapters', true);
 
   const view = document.getElementById('view');
   view.style.padding = '0';
@@ -342,10 +395,6 @@ async function renderEditor(chapterId) {
   });
 
   document.getElementById('history-btn').addEventListener('click', () => showHistory(book, chapter));
-  document.getElementById('agents-toggle-btn').addEventListener('click', () => {
-    document.querySelector('.side-panel').classList.toggle('open');
-    document.getElementById('mobile-backdrop').classList.toggle('show');
-  });
 
   let selectedAgent = null;
   const agentList = document.getElementById('agent-list');
@@ -399,7 +448,8 @@ function statusLabel(status) {
 }
 
 async function renderRun(runId) {
-  document.getElementById('topbar').innerHTML = `<div class="title">Run d'agent #${runId}</div>`;
+  renderTopbar(`<div class="title">Run d'agent #${runId}</div>`);
+  setBottomBar('chapters');
   const view = document.getElementById('view');
   view.style.padding = '28px 36px';
   view.innerHTML = `
