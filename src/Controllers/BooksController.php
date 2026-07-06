@@ -25,6 +25,7 @@ final class BooksController
         }
         $book['chapters'] = Chapter::forBook((int) $book['id']);
         $book['context'] = BookStorage::readFileAtRelativePath($book['path'], 'contexte.md');
+        $book['style'] = BookStorage::readFileAtRelativePath($book['path'], 'style-guide.md');
         Response::json(['book' => $book]);
     }
 
@@ -43,6 +44,23 @@ final class BooksController
         Book::touch((int) $book['id']);
 
         Response::json(['context' => $content]);
+    }
+
+    public static function updateStyle(array $args): void
+    {
+        $book = Book::find((int) $args['id']);
+        if ($book === null) {
+            Response::json(['error' => 'not_found'], 404);
+            return;
+        }
+
+        $body = json_decode(file_get_contents('php://input') ?: '[]', true) ?? [];
+        $content = (string) ($body['content'] ?? '');
+
+        BookStorage::writeFileAtRelativePath($book['path'], 'style-guide.md', $content);
+        Book::touch((int) $book['id']);
+
+        Response::json(['style' => $content]);
     }
 
     public static function create(): void
