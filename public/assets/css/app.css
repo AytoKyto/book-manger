@@ -265,13 +265,31 @@ input:focus, textarea:focus, select:focus, [contenteditable]:focus {
 .diff-line.hunk { color: var(--text-faint); background: var(--surface); }
 .diff-line.ctx { color: var(--text-muted); }
 
+.mobile-menu-btn, .mobile-only { display: none; }
+.mobile-backdrop { display: none; }
+
 @media (max-width: 900px) {
   .app-shell { grid-template-columns: 1fr; }
-  .sidebar { position: fixed; inset: 0 auto 0 0; width: 250px; z-index: 20; transform: translateX(-100%); transition: transform 0.18s ease; }
+  .sidebar { position: fixed; inset: 0 auto 0 0; width: 250px; z-index: 20; transform: translateX(-100%); transition: transform 0.18s ease; padding-top: 52px; }
   .sidebar.open { transform: translateX(0); }
   .editor-layout { grid-template-columns: 1fr; }
   .side-panel { position: fixed; inset: 0 0 0 auto; width: 300px; z-index: 20; transform: translateX(100%); transition: transform 0.18s ease; }
   .side-panel.open { transform: translateX(0); }
   .editor-pane { padding: 24px 20px; }
   .editor-toolbar { padding: 8px 20px; }
+  .topbar { padding-left: 56px; }
+
+  .mobile-menu-btn {
+    display: flex; align-items: center; justify-content: center;
+    position: fixed; top: 9px; left: 12px; z-index: 25;
+    width: 34px; height: 34px;
+    border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--text);
+    font-size: 16px; cursor: pointer;
+  }
+  .mobile-only { display: inline-flex; }
+  .mobile-backdrop.show {
+    display: block; position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.5); z-index: 15;
+  }
 }

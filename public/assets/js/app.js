@@ -102,8 +102,16 @@ function renderLogin() {
 
 // --------------------------------------------------------------- Shell ----
 
+function closeMobilePanels() {
+  document.getElementById('sidebar')?.classList.remove('open');
+  document.querySelector('.side-panel')?.classList.remove('open');
+  document.getElementById('mobile-backdrop')?.classList.remove('show');
+}
+
 function renderShell() {
   app.innerHTML = `
+    <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Ouvrir le menu">☰</button>
+    <div class="mobile-backdrop" id="mobile-backdrop"></div>
     <div class="app-shell">
       <nav class="sidebar" id="sidebar">
         <div class="sidebar-header" id="go-home">
@@ -120,12 +128,17 @@ function renderShell() {
       </div>
     </div>`;
 
-  document.getElementById('go-home').addEventListener('click', () => { location.hash = '/'; });
+  document.getElementById('go-home').addEventListener('click', () => { closeMobilePanels(); location.hash = '/'; });
   document.getElementById('logout-btn').addEventListener('click', async () => {
     await api('POST', '/api/logout');
     state.authenticated = false;
     route();
   });
+  document.getElementById('mobile-menu-btn').addEventListener('click', () => {
+    document.getElementById('sidebar').classList.toggle('open');
+    document.getElementById('mobile-backdrop').classList.toggle('show');
+  });
+  document.getElementById('mobile-backdrop').addEventListener('click', closeMobilePanels);
 
   renderSidebar();
 }
@@ -161,10 +174,11 @@ async function renderSidebar() {
   sidebarContent.innerHTML = html;
 
   sidebarContent.querySelectorAll('[data-book]').forEach((el) => {
-    el.addEventListener('click', () => { location.hash = `/books/${el.dataset.book}`; });
+    el.addEventListener('click', () => { closeMobilePanels(); location.hash = `/books/${el.dataset.book}`; });
   });
   sidebarContent.querySelectorAll('[data-chapter]').forEach((el) => {
     el.addEventListener('click', () => {
+      closeMobilePanels();
       location.hash = `/books/${state.currentBook.id}/chapters/${el.dataset.chapter}`;
     });
   });
@@ -173,6 +187,7 @@ async function renderSidebar() {
     addChapterBtn.addEventListener('click', async () => {
       const title = prompt('Titre du chapitre ?');
       if (!title) return;
+      closeMobilePanels();
       const data = await api('POST', `/api/books/${state.currentBook.id}/chapters`, { title });
       await openBook(state.currentBook.id, true);
       location.hash = `/books/${state.currentBook.id}/chapters/${data.chapter.id}`;
@@ -272,6 +287,7 @@ async function renderEditor(chapterId) {
   document.getElementById('topbar').innerHTML = `<div class="title">${escapeHtml(chapter.title)}</div>
     <div class="sub" id="save-indicator">Enregistré</div>
     <div class="spacer"></div>
+    <button class="btn small mobile-only" id="agents-toggle-btn">Agents</button>
     <button class="btn small" id="history-btn">Historique</button>`;
 
   const view = document.getElementById('view');
@@ -326,6 +342,10 @@ async function renderEditor(chapterId) {
   });
 
   document.getElementById('history-btn').addEventListener('click', () => showHistory(book, chapter));
+  document.getElementById('agents-toggle-btn').addEventListener('click', () => {
+    document.querySelector('.side-panel').classList.toggle('open');
+    document.getElementById('mobile-backdrop').classList.toggle('show');
+  });
 
   let selectedAgent = null;
   const agentList = document.getElementById('agent-list');
