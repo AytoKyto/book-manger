@@ -1,0 +1,16 @@
+[Unit]
+Description=Book Manager — worker d'agents Claude Code
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/srv/book-manager
+ExecStart=/usr/bin/php /srv/book-manager/worker/worker.php
+Restart=always
+RestartSec=3
+# Le jeton d'abonnement Claude (voir README §Déploiement) :
+EnvironmentFile=/srv/book-manager/.env
+
+[Install]
+WantedBy=multi-user.target
