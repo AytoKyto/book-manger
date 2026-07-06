@@ -46,7 +46,8 @@ final class ClaudeRunner
             }
             touch($logPath);
 
-            $prompt = self::buildPrompt($agent, $chapter, (string) $run['instruction']);
+            $bookContext = BookStorage::readFileAtRelativePath($book['path'], 'contexte.md');
+            $prompt = self::buildPrompt($agent, $chapter, (string) $run['instruction'], $bookContext);
 
             $command = [
                 Config::claudeBinary(),
@@ -72,12 +73,25 @@ final class ClaudeRunner
         }
     }
 
-    private static function buildPrompt(AgentTemplate $agent, ?array $chapter, string $instruction): string
+    private static function buildPrompt(AgentTemplate $agent, ?array $chapter, string $instruction, string $bookContext): string
     {
         $lines = [];
+
+        // Injected directly in the prompt text (not left to the model's discretion to go read
+        // the file) so every agent always has it, guaranteed — except the context-optimizer
+        // itself, which reads/edits contexte.md directly and doesn't need it echoed back.
+        if ($agent->name !== 'contexte' && trim($bookContext) !== '') {
+            $lines[] = "Contexte du livre à garder en tête pendant toute la tâche :";
+            $lines[] = trim($bookContext);
+            $lines[] = '';
+        }
+
         $lines[] = "Utilise le sous-agent « {$agent->name} » pour traiter la demande suivante.";
 
-        if ($chapter !== null) {
+        if ($agent->name === 'contexte') {
+            $lines[] = 'Améliore le fichier contexte.md à la racine du projet.';
+            $lines[] = 'Ne modifie aucun autre fichier que contexte.md.';
+        } elseif ($chapter !== null) {
             $lines[] = "Fichier concerné : chapitres/{$chapter['filename']}.";
             $lines[] = 'Ne modifie aucun autre fichier que celui-ci.';
         } else {
