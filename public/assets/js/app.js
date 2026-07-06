@@ -4,7 +4,13 @@ const AGENT_ICONS = {
   continuite: '🔗',
   'beta-lecteur': '👁',
   contexte: '🧭',
+  style: '🎨',
+  redacteur: '🖋',
 };
+
+// Personas triggered from the book overview page (context/style), not offered
+// as a per-chapter agent since they target book-level files, not the chapter.
+const BOOK_LEVEL_AGENTS = ['contexte', 'style'];
 
 const state = {
   authenticated: false,
@@ -12,7 +18,6 @@ const state = {
   agents: [],
   currentBook: null, // full book incl. chapters
   saveTimer: null,
-  contextSaveTimer: null,
   runEventSource: null,
 };
 
@@ -298,6 +303,33 @@ function bookCardHtml(b) {
   </div>`;
 }
 
+/** Wires autosave + "Optimiser avec Claude" for a book-level text file (contexte.md, style-guide.md). */
+function wireBookLevelField(book, { field, endpoint, agentName, textareaId, indicatorId, buttonId }) {
+  const textarea = document.getElementById(textareaId);
+  const indicator = document.getElementById(indicatorId);
+  let saveTimer = null;
+
+  const save = async () => {
+    const content = textarea.value;
+    await api('PUT', `/api/books/${book.id}/${endpoint}`, { content });
+    book[field] = content;
+    indicator.textContent = 'Enregistré';
+  };
+
+  textarea.addEventListener('input', () => {
+    indicator.textContent = 'Modifié…';
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(save, 900);
+  });
+
+  document.getElementById(buttonId).addEventListener('click', async () => {
+    clearTimeout(saveTimer);
+    await save();
+    const run = await api('POST', '/api/runs', { book_id: book.id, chapter_id: null, agent_name: agentName });
+    location.hash = `/runs/${run.run.id}`;
+  });
+}
+
 function renderBookOverview() {
   const book = state.currentBook;
   renderTopbar(
@@ -319,12 +351,24 @@ function renderBookOverview() {
       <textarea id="context-textarea" rows="6" placeholder="Pitch, genre, ton, enjeux principaux… Ce texte est toujours transmis aux agents, quel que soit le chapitre traité.">${escapeHtml(book.context || '')}</textarea>
     </div>`;
 
+  const styleHtml = `
+    <div class="context-section">
+      <div class="context-head">
+        <h3>Style d'écriture</h3>
+        <div class="context-actions">
+          <span class="sub" id="style-save-indicator"></span>
+          <button class="btn small" id="optimize-style-btn">🎨 Optimiser avec Claude</button>
+        </div>
+      </div>
+      <textarea id="style-textarea" rows="6" placeholder="Registre de langue, rythme, point de vue narratif, figures de style à privilégier ou éviter… Toujours transmis aux agents.">${escapeHtml(book.style || '')}</textarea>
+    </div>`;
+
   const view = document.getElementById('view');
   if (book.chapters.length === 0) {
-    view.innerHTML = contextHtml + `<div class="empty-state">Pas encore de chapitre.<br><button class="btn primary small" id="empty-new-chapter-btn" style="margin-top:14px">＋ Créer le premier chapitre</button></div>`;
+    view.innerHTML = contextHtml + styleHtml + `<div class="empty-state">Pas encore de chapitre.<br><button class="btn primary small" id="empty-new-chapter-btn" style="margin-top:14px">＋ Créer le premier chapitre</button></div>`;
     document.getElementById('empty-new-chapter-btn').addEventListener('click', () => createChapterFlow(book.id));
   } else {
-    view.innerHTML = contextHtml + `<div class="library-grid">${book.chapters.map((c) => `
+    view.innerHTML = contextHtml + styleHtml + `<div class="library-grid">${book.chapters.map((c) => `
       <div class="book-card" data-chapter="${c.id}">
         <div class="title" style="font-size:15px">${escapeHtml(c.title)}</div>
         <div class="meta"><span class="pill">${c.word_count} mots</span></div>
@@ -336,25 +380,13 @@ function renderBookOverview() {
 
   document.getElementById('new-chapter-btn').addEventListener('click', () => createChapterFlow(book.id));
 
-  const contextTextarea = document.getElementById('context-textarea');
-  const contextSaveIndicator = document.getElementById('context-save-indicator');
-  const saveContext = async () => {
-    const content = contextTextarea.value;
-    await api('PUT', `/api/books/${book.id}/context`, { content });
-    book.context = content;
-    contextSaveIndicator.textContent = 'Enregistré';
-  };
-  contextTextarea.addEventListener('input', () => {
-    contextSaveIndicator.textContent = 'Modifié…';
-    clearTimeout(state.contextSaveTimer);
-    state.contextSaveTimer = setTimeout(saveContext, 900);
+  wireBookLevelField(book, {
+    field: 'context', endpoint: 'context', agentName: 'contexte',
+    textareaId: 'context-textarea', indicatorId: 'context-save-indicator', buttonId: 'optimize-context-btn',
   });
-
-  document.getElementById('optimize-context-btn').addEventListener('click', async () => {
-    clearTimeout(state.contextSaveTimer);
-    await saveContext();
-    const run = await api('POST', '/api/runs', { book_id: book.id, chapter_id: null, agent_name: 'contexte' });
-    location.hash = `/runs/${run.run.id}`;
+  wireBookLevelField(book, {
+    field: 'style', endpoint: 'style', agentName: 'style',
+    textareaId: 'style-textarea', indicatorId: 'style-save-indicator', buttonId: 'optimize-style-btn',
   });
 
   document.getElementById('delete-book').addEventListener('click', async () => {
@@ -404,7 +436,7 @@ async function renderEditor(chapterId) {
         <h3>Demander à un agent</h3>
         <div id="agent-list"></div>
         <div class="field">
-          <label>Instruction complémentaire (optionnel)</label>
+          <label id="agent-instruction-label">Instruction complémentaire (optionnel)</label>
           <textarea id="agent-instruction" rows="3" placeholder="Ex : insiste sur les dialogues"></textarea>
         </div>
         <button class="btn primary" id="launch-agent" style="width:100%">Lancer l'agent</button>
@@ -439,7 +471,9 @@ async function renderEditor(chapterId) {
 
   let selectedAgent = null;
   const agentList = document.getElementById('agent-list');
-  agentList.innerHTML = state.agents.filter((a) => a.name !== 'contexte').map((a) => `
+  const instructionLabel = document.getElementById('agent-instruction-label');
+  const instructionField = document.getElementById('agent-instruction');
+  agentList.innerHTML = state.agents.filter((a) => !BOOK_LEVEL_AGENTS.includes(a.name)).map((a) => `
     <div class="agent-card" data-agent="${a.name}">
       <div class="name">${AGENT_ICONS[a.name] || '•'} ${a.name}</div>
       <div class="desc">${escapeHtml(a.description)}</div>
@@ -450,12 +484,24 @@ async function renderEditor(chapterId) {
       selectedAgent = el.dataset.agent;
       agentList.querySelectorAll('.agent-card').forEach((c) => c.classList.remove('selected'));
       el.classList.add('selected');
+
+      if (selectedAgent === 'redacteur') {
+        instructionLabel.textContent = 'Décris ce que tu veux qu\'il écrive';
+        instructionField.placeholder = 'Ex : écris la scène où le héros découvre la lettre, environ 400 mots, tension montante';
+      } else {
+        instructionLabel.textContent = 'Instruction complémentaire (optionnel)';
+        instructionField.placeholder = 'Ex : insiste sur les dialogues';
+      }
     });
   });
 
   document.getElementById('launch-agent').addEventListener('click', async () => {
     if (!selectedAgent) { alert('Choisis un agent dans la liste.'); return; }
-    const instruction = document.getElementById('agent-instruction').value;
+    const instruction = instructionField.value;
+    if (selectedAgent === 'redacteur' && instruction.trim() === '') {
+      alert('Décris ce que tu veux que le rédacteur écrive avant de lancer l\'agent.');
+      return;
+    }
     const run = await api('POST', '/api/runs', {
       book_id: book.id,
       chapter_id: chapterId,
