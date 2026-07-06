@@ -56,6 +56,7 @@ $router->get('/api/books', $guarded(fn () => BooksController::index()));
 $router->post('/api/books', $guarded(fn () => BooksController::create()));
 $router->get('/api/books/{id}', $guarded(fn ($a) => BooksController::show($a)));
 $router->delete('/api/books/{id}', $guarded(fn ($a) => BooksController::delete($a)));
+$router->put('/api/books/{id}/context', $guarded(fn ($a) => BooksController::updateContext($a)));
 
 $router->post('/api/books/{bookId}/chapters', $guarded(fn ($a) => ChaptersController::create($a)));
 $router->post('/api/books/{bookId}/chapters/reorder', $guarded(fn ($a) => ChaptersController::reorder($a)));

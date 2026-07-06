@@ -3,6 +3,7 @@ const AGENT_ICONS = {
   styliste: '✎',
   continuite: '🔗',
   'beta-lecteur': '👁',
+  contexte: '🧭',
 };
 
 const state = {
@@ -11,6 +12,7 @@ const state = {
   agents: [],
   currentBook: null, // full book incl. chapters
   saveTimer: null,
+  contextSaveTimer: null,
   runEventSource: null,
 };
 
@@ -236,15 +238,17 @@ async function renderSidebar() {
   });
   const addChapterBtn = document.getElementById('add-chapter');
   if (addChapterBtn) {
-    addChapterBtn.addEventListener('click', async () => {
-      const title = prompt('Titre du chapitre ?');
-      if (!title) return;
-      closeMobilePanels();
-      const data = await api('POST', `/api/books/${state.currentBook.id}/chapters`, { title });
-      await openBook(state.currentBook.id, true);
-      location.hash = `/books/${state.currentBook.id}/chapters/${data.chapter.id}`;
-    });
+    addChapterBtn.addEventListener('click', () => createChapterFlow(state.currentBook.id));
   }
+}
+
+async function createChapterFlow(bookId) {
+  const title = prompt('Titre du chapitre ?');
+  if (!title) return;
+  closeMobilePanels();
+  const data = await api('POST', `/api/books/${bookId}/chapters`, { title });
+  await openBook(bookId, true);
+  location.hash = `/books/${bookId}/chapters/${data.chapter.id}`;
 }
 
 async function openBook(bookId, force = false) {
@@ -298,15 +302,29 @@ function renderBookOverview() {
   const book = state.currentBook;
   renderTopbar(
     `<div class="title">${escapeHtml(book.title)}</div><div class="sub">${book.chapters.length} chapitre(s)</div>`,
-    `<button class="btn danger small" id="delete-book">Supprimer</button>`
+    `<button class="btn small" id="new-chapter-btn">＋ Chapitre</button>
+     <button class="btn danger small" id="delete-book">Supprimer</button>`
   );
   setBottomBar('chapters');
 
+  const contextHtml = `
+    <div class="context-section">
+      <div class="context-head">
+        <h3>Contexte du livre</h3>
+        <div class="context-actions">
+          <span class="sub" id="context-save-indicator"></span>
+          <button class="btn small" id="optimize-context-btn">🧭 Optimiser avec Claude</button>
+        </div>
+      </div>
+      <textarea id="context-textarea" rows="6" placeholder="Pitch, genre, ton, enjeux principaux… Ce texte est toujours transmis aux agents, quel que soit le chapitre traité.">${escapeHtml(book.context || '')}</textarea>
+    </div>`;
+
   const view = document.getElementById('view');
   if (book.chapters.length === 0) {
-    view.innerHTML = `<div class="empty-state">Pas encore de chapitre. Ajoute-en un depuis la barre latérale.</div>`;
+    view.innerHTML = contextHtml + `<div class="empty-state">Pas encore de chapitre.<br><button class="btn primary small" id="empty-new-chapter-btn" style="margin-top:14px">＋ Créer le premier chapitre</button></div>`;
+    document.getElementById('empty-new-chapter-btn').addEventListener('click', () => createChapterFlow(book.id));
   } else {
-    view.innerHTML = `<div class="library-grid">${book.chapters.map((c) => `
+    view.innerHTML = contextHtml + `<div class="library-grid">${book.chapters.map((c) => `
       <div class="book-card" data-chapter="${c.id}">
         <div class="title" style="font-size:15px">${escapeHtml(c.title)}</div>
         <div class="meta"><span class="pill">${c.word_count} mots</span></div>
@@ -315,6 +333,29 @@ function renderBookOverview() {
       el.addEventListener('click', () => { location.hash = `/books/${book.id}/chapters/${el.dataset.chapter}`; });
     });
   }
+
+  document.getElementById('new-chapter-btn').addEventListener('click', () => createChapterFlow(book.id));
+
+  const contextTextarea = document.getElementById('context-textarea');
+  const contextSaveIndicator = document.getElementById('context-save-indicator');
+  const saveContext = async () => {
+    const content = contextTextarea.value;
+    await api('PUT', `/api/books/${book.id}/context`, { content });
+    book.context = content;
+    contextSaveIndicator.textContent = 'Enregistré';
+  };
+  contextTextarea.addEventListener('input', () => {
+    contextSaveIndicator.textContent = 'Modifié…';
+    clearTimeout(state.contextSaveTimer);
+    state.contextSaveTimer = setTimeout(saveContext, 900);
+  });
+
+  document.getElementById('optimize-context-btn').addEventListener('click', async () => {
+    clearTimeout(state.contextSaveTimer);
+    await saveContext();
+    const run = await api('POST', '/api/runs', { book_id: book.id, chapter_id: null, agent_name: 'contexte' });
+    location.hash = `/runs/${run.run.id}`;
+  });
 
   document.getElementById('delete-book').addEventListener('click', async () => {
     if (!confirm(`Supprimer définitivement « ${book.title} » et tous ses chapitres ?`)) return;
@@ -398,7 +439,7 @@ async function renderEditor(chapterId) {
 
   let selectedAgent = null;
   const agentList = document.getElementById('agent-list');
-  agentList.innerHTML = state.agents.map((a) => `
+  agentList.innerHTML = state.agents.filter((a) => a.name !== 'contexte').map((a) => `
     <div class="agent-card" data-agent="${a.name}">
       <div class="name">${AGENT_ICONS[a.name] || '•'} ${a.name}</div>
       <div class="desc">${escapeHtml(a.description)}</div>

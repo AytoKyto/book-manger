@@ -35,6 +35,7 @@ final class BookStorage
         mkdir($root . '/chapitres', 0775, true);
         mkdir($root . '/.claude/agents', 0775, true);
 
+        file_put_contents($root . '/contexte.md', "# Contexte du livre\n\n_Décris ici le pitch, le genre, le ton et les enjeux principaux. Ce texte est toujours transmis aux agents, quel que soit le chapitre traité._\n");
         file_put_contents($root . '/personnages.md', "# Personnages\n\n_Décris ici les personnages principaux pour aider les agents à vérifier la continuité._\n");
         file_put_contents($root . '/style-guide.md', "# Guide de style\n\n_Ton, registre de langue, règles perso pour l'agent styliste._\n");
 
